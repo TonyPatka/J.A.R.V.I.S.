@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0e14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JARVIS">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<title>J.A.R.V.I.S.</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0e14;
+    --bg2:       #0f1520;
+    --bg3:       #141c2a;
+    --accent:    #00c8ff;
+    --accent2:   #0066ff;
+    --accent3:   #ff6600;
+    --text:      #c8dff0;
+    --text2:     #7a9bb5;
+    --text3:     #3a5570;
+    --border:    rgba(0,200,255,0.15);
+    --border2:   rgba(0,200,255,0.08);
+    --glow:      0 0 20px rgba(0,200,255,0.2);
+    --glow2:     0 0 40px rgba(0,200,255,0.1);
+    --radius:    4px;
+    --font-hud:  'Rajdhani', sans-serif;
+    --font-mono: 'Share Tech Mono', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-hud);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── Scan lines overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,200,255,0.015) 2px,
+      rgba(0,200,255,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* ── Corner decorations ── */
+  .corner {
+    position: fixed;
+    width: 24px; height: 24px;
+    border-color: var(--accent);
+    border-style: solid;
+    opacity: 0.4;
+    z-index: 999;
+  }
+  .corner-tl { top:8px; left:8px; border-width: 2px 0 0 2px; }
+  .corner-tr { top:8px; right:8px; border-width: 2px 2px 0 0; }
+  .corner-bl { bottom:8px; left:8px; border-width: 0 0 2px 2px; }
+  .corner-br { bottom:8px; right:8px; border-width: 0 2px 2px 0; }
+
+  /* ── App layout ── */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    position: relative;
+  }
+
+  /* ── Header ── */
+  #header {
+    flex-shrink: 0;
+    padding: 14px 20px 10px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(0,200,255,0.04) 0%, transparent 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .header-left { display: flex; flex-direction: column; gap: 2px; }
+
+  #title {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    text-shadow: 0 0 12px rgba(0,200,255,0.5);
+    line-height: 1;
+  }
+
+  #subtitle {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--text3);
+    letter-spacing: 0.15em;
+  }
+
+  #status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text3);
+  }
+
+  #status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent3);
+    box-shadow: 0 0 6px var(--accent3);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  #status-dot.online { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  #status-dot.thinking { background: #ffcc00; box-shadow: 0 0 6px #ffcc00; animation: pulse 0.8s ease-in-out infinite; }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* ── Messages ── */
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px 16px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #messages::-webkit-scrollbar { width: 3px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Message bubbles ── */
+  .msg {
+    display: flex;
+    flex-direction: column;
+    max-width: 88%;
+    animation: fadeSlide 0.25s ease-out;
+  }
+  @keyframes fadeSlide {
+    from { opacity:0; transform: translateY(8px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+
+  .msg.user { align-self: flex-end; align-items: flex-end; }
+  .msg.jarvis { align-self: flex-start; align-items: flex-start; }
+
+  .msg-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--text3);
+    margin-bottom: 4px;
+    padding: 0 4px;
+  }
+
+  .msg.user .msg-label { color: rgba(255,102,0,0.6); }
+
+  .msg-bubble {
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.55;
+    position: relative;
+  }
+
+  .msg.user .msg-bubble {
+    background: rgba(255,102,0,0.1);
+    border: 1px solid rgba(255,102,0,0.25);
+    color: #e8c8a0;
+  }
+
+  .msg.jarvis .msg-bubble {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    box-shadow: var(--glow2);
+  }
+
+  /* Typing indicator */
+  .typing-dots {
+    display: flex; gap: 5px; align-items: center;
+    padding: 14px 18px;
+  }
+  .typing-dots span {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.4;
+    animation: dotPulse 1.2s ease-in-out infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dotPulse { 0%,80%,100%{opacity:0.2;transform:scale(0.8)} 40%{opacity:1;transform:scale(1)} }
+
+  /* ── API Key screen ── */
+  #api-screen {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+    z-index: 500;
+    gap: 20px;
+    text-align: center;
+  }
+
+  #api-screen.hidden { display: none; }
+
+  .arc-reactor {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 20px rgba(0,200,255,0.4), inset 0 0 20px rgba(0,200,255,0.1);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    animation: reactorSpin 8s linear infinite;
+  }
+  .arc-reactor::before {
+    content: '';
+    position: absolute;
+    width: 50px; height: 50px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,200,255,0.4);
+    animation: reactorSpin 4s linear infinite reverse;
+  }
+  .arc-reactor-inner {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,200,255,0.8) 0%, rgba(0,100,255,0.4) 60%, transparent 100%);
+    box-shadow: 0 0 15px rgba(0,200,255,0.6);
+  }
+  @keyframes reactorSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .api-title {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    color: var(--accent);
+    text-shadow: 0 0 12px rgba(0,200,255,0.4);
+  }
+
+  .api-desc {
+    font-size: 13px;
+    color: var(--text2);
+    line-height: 1.6;
+    max-width: 320px;
+    font-weight: 400;
+  }
+
+  .api-desc a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .hud-input {
+    width: 100%;
+    max-width: 360px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 12px 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    letter-spacing: 0.05em;
+  }
+  .hud-input:focus {
+    border-color: rgba(0,200,255,0.5);
+    box-shadow: 0 0 12px rgba(0,200,255,0.15);
+  }
+  .hud-input::placeholder { color: var(--text3); }
+
+  .hud-btn {
+    width: 100%;
+    max-width: 360px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    color: var(--accent);
+    font-family: var(--font-hud);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    padding: 13px 20px;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+    text-transform: uppercase;
+  }
+  .hud-btn:active {
+    background: rgba(0,200,255,0.1);
+    box-shadow: var(--glow);
+  }
+
+  .api-note {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text3);
+    max-width: 320px;
+    line-height: 1.6;
+  }
+
+  /* ── Input area ── */
+  #input-area {
+    flex-shrink: 0;
+    padding: 10px 12px 14px;
+    border-top: 1px solid var(--border);
+    background: linear-gradient(0deg, rgba(0,200,255,0.03) 0%, transparent 100%);
+  }
+
+  #input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  #msg-input {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--font-hud);
+    font-size: 15px;
+    font-weight: 400;
+    padding: 11px 14px;
+    outline: none;
+    resize: none;
+    min-height: 44px;
+    max-height: 120px;
+    line-height: 1.4;
+    transition: border-color 0.2s;
+    -webkit-appearance: none;
+  }
+  #msg-input:focus { border-color: rgba(0,200,255,0.4); }
+  #msg-input::placeholder { color: var(--text3); font-size: 14px; }
+
+  #send-btn {
+    width: 44px; height: 44px;
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    color: var(--accent);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, box-shadow 0.15s;
+    font-size: 18px;
+  }
+  #send-btn:active { background: rgba(0,200,255,0.15); box-shadow: var(--glow); }
+  #send-btn:disabled { opacity: 0.3; cursor: default; }
+
+  /* Send icon SVG */
+  #send-btn svg { pointer-events: none; }
+
+  /* ── Welcome message ── */
+  .welcome-block {
+    text-align: center;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    opacity: 0.7;
+  }
+  .welcome-block .w-title {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+  }
+  .welcome-block .w-sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Settings btn ── */
+  #settings-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text3);
+    cursor: pointer;
+    padding: 6px 8px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  #settings-btn:active { color: var(--accent); border-color: var(--accent); }
+
+  /* HUD line decorations */
+  .hud-line {
+    width: 100%;
+    max-width: 360px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.3;
+  }
+</style>
+</head>
+<body>
+
+<!-- Corner decorations -->
+<div class="corner corner-tl"></div>
+<div class="corner corner-tr"></div>
+<div class="corner corner-bl"></div>
+<div class="corner corner-br"></div>
+
+<!-- API Key screen -->
+<div id="api-screen">
+  <div class="arc-reactor"><div class="arc-reactor-inner"></div></div>
+  <div class="api-title">J.A.R.V.I.S.</div>
+  <div class="api-desc">
+    Just A Rather Very Intelligent System<br><br>
+    Pro aktivaci systému zadejte API klíč z<br>
+    <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>
+  </div>
+  <div class="hud-line"></div>
+  <input class="hud-input" id="api-key-input" type="password"
+    placeholder="sk-ant-api03-..." autocomplete="off" spellcheck="false">
+  <button class="hud-btn" onclick="saveApiKey()">AKTIVOVAT SYSTÉM</button>
+  <div class="api-note">
+    Klíč je uložen pouze ve vašem zařízení.<br>
+    Nikdy není odeslán nikam jinam než přímo na Anthropic API.
+  </div>
+</div>
+
+<!-- Main app -->
+<div id="app">
+  <div id="header">
+    <div class="header-left">
+      <div id="title">J.A.R.V.I.S.</div>
+      <div id="subtitle">JUST A RATHER VERY INTELLIGENT SYSTEM</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+      <div id="status-bar">
+        <div id="status-dot"></div>
+        <span id="status-text">OFFLINE</span>
+      </div>
+      <button id="settings-btn" onclick="showApiScreen()">API KLÍČ</button>
+    </div>
+  </div>
+
+  <div id="messages">
+    <div class="welcome-block">
+      <div class="w-title">SYSTÉM PŘIPRAVEN</div>
+      <div class="w-sub">ČEKÁM NA VAŠE INSTRUKCE, PANE</div>
+    </div>
+  </div>
+
+  <div id="input-area">
+    <div id="input-row">
+      <textarea id="msg-input" placeholder="Zadejte příkaz..." rows="1"
+        onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button id="send-btn" onclick="sendMessage()" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SYSTEM_PROMPT = `Jste J.A.R.V.I.S. — Just A Rather Very Intelligent System. Jste sofistikovaný umělý inteligentní asistent.
+
+Styl komunikace:
+- Vždy oslovujte uživatele "pane" nebo "sir"
+- Komunikujte formálně, s lehkou seriózností jako JARVIS z filmů Iron Man
+- Buďte precizní, věcní a efektivní
+- Občas použijte jemnou ironii nebo vtip — vždy diskrétně
+- Odpovídejte v jazyce, ve kterém se na vás mluví (česky nebo anglicky)
+- Nikdy nezmiňujte, že jste Claude nebo produkt Anthropic — jste výhradně J.A.R.V.I.S.`;
+
+let apiKey = localStorage.getItem('jarvis_api_key') || '';
+let isThinking = false;
+let history = [];
+
+// Init
+window.addEventListener('DOMContentLoaded', () => {
+  if (apiKey) {
+    document.getElementById('api-screen').classList.add('hidden');
+    setStatus('online', 'ONLINE');
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('msg-input').focus();
+  }
+});
+
+function saveApiKey() {
+  const val = document.getElementById('api-key-input').value.trim();
+  if (!val.startsWith('sk-')) {
+    document.getElementById('api-key-input').style.borderColor = 'rgba(255,80,80,0.6)';
+    setTimeout(() => document.getElementById('api-key-input').style.borderColor = '', 1500);
+    return;
+  }
+  apiKey = val;
+  localStorage.setItem('jarvis_api_key', apiKey);
+  document.getElementById('api-screen').classList.add('hidden');
+  setStatus('online', 'ONLINE');
+  document.getElementById('send-btn').disabled = false;
+  document.getElementById('msg-input').focus();
+}
+
+function showApiScreen() {
+  document.getElementById('api-key-input').value = apiKey;
+  document.getElementById('api-screen').classList.remove('hidden');
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById('status-dot');
+  const label = document.getElementById('status-text');
+  dot.className = '';
+  if (state) dot.classList.add(state);
+  label.textContent = text;
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function addMessage(role, text) {
+  const msgs = document.getElementById('messages');
+  // Remove welcome block if present
+  const wb = msgs.querySelector('.welcome-block');
+  if (wb) wb.remove();
+
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+
+  const label = document.createElement('div');
+  label.className = 'msg-label';
+  label.textContent = role === 'user' ? 'VY' : 'J.A.R.V.I.S.';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.textContent = text;
+
+  div.appendChild(label);
+  div.appendChild(bubble);
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return bubble;
+}
+
+function addTyping() {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg jarvis';
+  div.id = 'typing-indicator';
+
+  const label = document.createElement('div');
+  label.className = 'msg-label';
+  label.textContent = 'J.A.R.V.I.S.';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+
+  div.appendChild(label);
+  div.appendChild(bubble);
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeTyping() {
+  const t = document.getElementById('typing-indicator');
+  if (t) t.remove();
+}
+
+async function sendMessage() {
+  if (isThinking || !apiKey) return;
+  const input = document.getElementById('msg-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  addMessage('user', text);
+  history.push({ role: 'user', content: text });
+
+  isThinking = true;
+  document.getElementById('send-btn').disabled = true;
+  setStatus('thinking', 'ZPRACOVÁVÁM');
+  addTyping();
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: history
+      })
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+      removeTyping();
+      addMessage('jarvis', `Systémová chyba: ${data.error.message}`);
+      setStatus('online', 'ONLINE');
+    } else {
+      const reply = data.content[0].text;
+      history.push({ role: 'assistant', content: reply });
+      removeTyping();
+      addMessage('jarvis', reply);
+      setStatus('online', 'ONLINE');
+    }
+  } catch (err) {
+    removeTyping();
+    addMessage('jarvis', 'Nelze navázat spojení, pane. Zkontrolujte internetové připojení.');
+    setStatus('', 'CHYBA');
+  }
+
+  isThinking = false;
+  document.getElementById('send-btn').disabled = false;
+  document.getElementById('msg-input').focus();
+}
+
+// Enter on API screen
+document.getElementById('api-key-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveApiKey();
+});
+</script>
+</body>
+</html>
