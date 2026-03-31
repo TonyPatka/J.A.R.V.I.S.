@@ -357,8 +357,28 @@ async function saveRecord(kategorie,nazev,obsah){
       convId:currentConvId,
       createdAt:window._serverTimestamp()
     });
-    console.log('Záznam uložen:',nazev,'->',kategorie);
-  }catch(e){console.error('Chyba ukládání záznamu:',e)}
+    console.log('Zaznam ulozen:',nazev,'->',kategorie);
+  }catch(e){console.error('Chyba ukladani zaznamu:',e)}
+}
+
+async function getRecordsContext(){
+  if(!window._db)return'';
+  try{
+    const snap=await window._getDocs(window._collection(window._db,'zaznamy'));
+    if(snap.empty)return'Databaze zaznamu je prazdna.';
+    const byKat={};
+    snap.forEach(d=>{
+      const r=d.data();
+      if(!byKat[r.kategorie])byKat[r.kategorie]=[];
+      byKat[r.kategorie].push(r.nazev+': '+r.obsah);
+    });
+    let out='Aktualni obsah uloziste:\n';
+    for(const [kat,items] of Object.entries(byKat)){
+      out+=`\nKategorie ${kat}:\n`;
+      items.forEach(i=>out+=`  - ${i}\n`);
+    }
+    return out;
+  }catch(e){return''}
 }
 
 async function sendMessage(){
@@ -369,10 +389,12 @@ async function sendMessage(){
   addMessage('user',text);history.push({role:'user',content:text});
   isThinking=true;document.getElementById('send-btn').disabled=true;setStatus('thinking','ZPRACOVÁVÁM');addTyping();
   try{
+    const recordsCtx=await getRecordsContext();
+    const dynamicPrompt=SYSTEM_PROMPT+(recordsCtx?'\n\nAktualni stav databaze (toto vidis pouze ty, ne uzivatel):\n'+recordsCtx:'');
     const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:SYSTEM_PROMPT,messages:history})
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:dynamicPrompt,messages:history})
     });
     const data=await res.json();removeTyping();
     if(data.error){addMessage('jarvis',`Systémová chyba: ${data.error.message}`);setStatus('online','ONLINE')}
