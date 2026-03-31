@@ -586,55 +586,74 @@ async function sendMessage(){
   input.value='';input.style.height='auto';
   addMessage('user',text);history.push({role:'user',content:text});
   isThinking=true;document.getElementById('send-btn').disabled=true;setStatus('thinking','ZPRACOVÁVÁM');addTyping();
-  try{
-    const memoryCtx=getMemoryContext();
-    const settingsCtx=`\nAktuální nastavení: rychlost=${jarvisSettings.speed}, délka=${jarvisSettings.responseLength}, hlas=${jarvisSettings.voice}`;
-    const dynamicPrompt=SYSTEM_PROMPT+(memoryCtx?'\n\n'+memoryCtx:'')+(cachedRecordsContext?'\n\nUloziste:\n'+cachedRecordsContext:'')+settingsCtx;
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:jarvisSettings.maxTokens,system:dynamicPrompt,messages:history.slice(-20)})
-    });
-    const data=await res.json();removeTyping();
-    if(data.error){addMessage('jarvis',`Systémová chyba: ${data.error.message}`);setStatus('online','ONLINE')}
-    else{
-      let reply=data.content[0].text;
-      let extractedTitle=null;
-      const m=reply.match(/\[TÉMA:\s*(.+?)\]/);
-      if(m){extractedTitle=m[1].trim();currentConvTitle=extractedTitle;reply=reply.replace(/\[TÉMA:\s*.+?\]/,'').trim()}
-      const mc=reply.match(/\[KATEGORIE:\s*(.+?)\]/);
-      if(mc){currentCategory=mc[1].trim();reply=reply.replace(/\[KATEGORIE:\s*.+?\]/,'').trim()}
-      const mu=reply.match(/\[ULOZ:\s*(.+?)\|(.+?)\|(.+?)\]/);
-      if(mu){
-        const kat=mu[1].trim(),nazev=mu[2].trim(),obsah=mu[3].trim();
-        reply=reply.replace(/\[ULOZ:\s*.+?\]/,'').trim();
-        saveRecord(kat,nazev,obsah);
+
+  const memoryCtx=getMemoryContext();
+  const settingsCtx=`\nAktuální nastavení: rychlost=${jarvisSettings.speed}, délka=${jarvisSettings.responseLength}, hlas=${jarvisSettings.voice}`;
+  const dynamicPrompt=SYSTEM_PROMPT+(memoryCtx?'\n\n'+memoryCtx:'')+(cachedRecordsContext?'\n\nUloziste:\n'+cachedRecordsContext:'')+settingsCtx;
+
+  const callAPI=async(attempt=1)=>{
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:jarvisSettings.maxTokens,system:dynamicPrompt,messages:history.slice(-20)})
+      });
+      const data=await res.json();
+      if((data.error?.type==='overloaded_error'||res.status===529)&&attempt<4){
+        setStatus('thinking',`ZNOVU (${attempt}/3)`);
+        await new Promise(r=>setTimeout(r,3000*attempt));
+        return callAPI(attempt+1);
       }
-      const mp=reply.match(/\[PAMATUJ:\s*(.+?)\|(.+?)\]/);
-      if(mp){
-        const klic=mp[1].trim(),hodnota=mp[2].trim();
-        reply=reply.replace(/\[PAMATUJ:\s*.+?\]/,'').trim();
-        saveMemory(klic,hodnota);
+      removeTyping();
+      if(data.error){addMessage('jarvis',`Systémová chyba: ${data.error.message}`);setStatus('online','ONLINE');}
+      else{
+        let reply=data.content[0].text;
+        let extractedTitle=null;
+        const m=reply.match(/\[TÉMA:\s*(.+?)\]/);
+        if(m){extractedTitle=m[1].trim();currentConvTitle=extractedTitle;reply=reply.replace(/\[TÉMA:\s*.+?\]/,'').trim()}
+        const mc=reply.match(/\[KATEGORIE:\s*(.+?)\]/);
+        if(mc){currentCategory=mc[1].trim();reply=reply.replace(/\[KATEGORIE:\s*.+?\]/,'').trim()}
+        const mu=reply.match(/\[ULOZ:\s*(.+?)\|(.+?)\|(.+?)\]/);
+        if(mu){
+          const kat=mu[1].trim(),nazev=mu[2].trim(),obsah=mu[3].trim();
+          reply=reply.replace(/\[ULOZ:\s*.+?\]/,'').trim();
+          saveRecord(kat,nazev,obsah);
+        }
+        const mp=reply.match(/\[PAMATUJ:\s*(.+?)\|(.+?)\]/);
+        if(mp){
+          const klic=mp[1].trim(),hodnota=mp[2].trim();
+          reply=reply.replace(/\[PAMATUJ:\s*.+?\]/,'').trim();
+          saveMemory(klic,hodnota);
+        }
+        const mn=reply.match(/\[NASTAV:\s*(.+?)\|(.+?)\]/);
+        if(mn){
+          const param=mn[1].trim(),val=mn[2].trim();
+          reply=reply.replace(/\[NASTAV:\s*.+?\]/,'').trim();
+          applySettings(param,val);
+        }
+        if(reply.includes('[NOVA_KONVERZACE]')){
+          reply=reply.replace('[NOVA_KONVERZACE]','').trim();
+          setTimeout(()=>newConversation(),800);
+        }
+        if(reply.includes('[VYPIS_HLASY]')){
+          reply=reply.replace('[VYPIS_HLASY]','').trim();
+          const voices=getAvailableVoices();
+          reply+=('\n\nDostupné hlasy v tvém systému: '+voices);
+        }
+        history.push({role:'assistant',content:reply});addMessage('jarvis',reply);speak(reply);
+        await saveToFirebase(extractedTitle);
       }
-      const mn=reply.match(/\[NASTAV:\s*(.+?)\|(.+?)\]/);
-      if(mn){
-        const param=mn[1].trim(),val=mn[2].trim();
-        reply=reply.replace(/\[NASTAV:\s*.+?\]/,'').trim();
-        applySettings(param,val);
+    }catch(err){
+      if(attempt<4){
+        setStatus('thinking',`ZNOVU (${attempt}/3)`);
+        await new Promise(r=>setTimeout(r,3000*attempt));
+        return callAPI(attempt+1);
       }
-      if(reply.includes('[NOVA_KONVERZACE]')){
-        reply=reply.replace('[NOVA_KONVERZACE]','').trim();
-        setTimeout(()=>newConversation(),800);
-      }
-      if(reply.includes('[VYPIS_HLASY]')){
-        reply=reply.replace('[VYPIS_HLASY]','').trim();
-        const voices=getAvailableVoices();
-        reply+=('\n\nDostupné hlasy v tvém systému: '+voices);
-      }
-      history.push({role:'assistant',content:reply});addMessage('jarvis',reply);speak(reply);
-      await saveToFirebase(extractedTitle);
+      removeTyping();addMessage('jarvis','Spojení selhalo po třech pokusech. Zkontrolujte připojení.');setStatus('','CHYBA');
     }
-  }catch(err){removeTyping();addMessage('jarvis','Nelze navázat spojení, pane. Zkontrolujte internetové připojení.');setStatus('','CHYBA')}
+  };
+
+  await callAPI();
   isThinking=false;document.getElementById('send-btn').disabled=false;document.getElementById('msg-input').focus();
 }
 
