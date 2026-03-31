@@ -139,7 +139,9 @@
   <div class="hud-line"></div>
   <input class="hud-input" id="api-key-input" type="password" placeholder="sk-ant-api03-..." autocomplete="off" spellcheck="false">
   <button class="hud-btn" onclick="saveApiKey()">AKTIVOVAT SYSTÉM</button>
-  <div class="api-note">Klíč je uložen pouze ve vašem zařízení.<br>Nikdy není odeslán nikam jinam než přímo na Anthropic API.</div>
+  <div class="hud-line"></div>
+  <input class="hud-input" id="openai-key-input" type="password" placeholder="OpenAI API klíč (sk-proj-...)" autocomplete="off" spellcheck="false">
+  <div class="api-note">Oba klíče jsou uloženy pouze ve vašem zařízení.<br>Claude klíč → Anthropic API &nbsp;|&nbsp; OpenAI klíč → hlasový výstup</div>
 </div>
 <div id="app">
   <div id="header">
@@ -217,8 +219,12 @@ Paměť a ukládání:
 - NIKDY neříkej že nemůžeš ukládat — vše funguje.
 
 Dynamická osobnost a nastavení:
-- Když uživatel řekne "mluv rychleji" → přidej [NASTAV: rychlost | 1.8] a ulož [PAMATUJ: rychlost_hlasu | 1.8]
-- Když řekne "mluv pomaleji" → [NASTAV: rychlost | 1.0] a [PAMATUJ: rychlost_hlasu | 1.0]
+- Aktuální rychlost hlasu je vždy uvedena v sekci "Aktuální nastavení systému" níže
+- Když uživatel řekne "mluv rychleji" nebo "zrychli" → vypočítej novou rychlost = aktuální + 0.2, přidej [NASTAV: rychlost | X] a [PAMATUJ: rychlost_hlasu | X]
+- Když řekne "mluv pomaleji", "zpomal" nebo "o X procent pomaleji" → vypočítej novou rychlost správně a přidej [NASTAV: rychlost | X] a [PAMATUJ: rychlost_hlasu | X]
+- Příklad: aktuální rychlost 1.4, uživatel chce zpomalit o 15% → nová rychlost = 1.4 × 0.85 = 1.19 → [NASTAV: rychlost | 1.19]
+- Vždy použij přesné číslo, ne slovní popis
+- Když uživatel chce změnit hlas → vypiš dostupné hlasy a nechej ho vybrat: Alloy (neutrální), Echo (jemný), Fable (britský), Onyx (hluboký), Nova (ženský), Shimmer (ženský jemný). Po výběru použij [NASTAV: hlas | název_hlasu] a [PAMATUJ: hlas | název_hlasu]. Název hlasu vždy malými písmeny (alloy, echo, fable, onyx, nova, shimmer).
 - Když řekne "odpovídej kratčeji" → [NASTAV: delka | krátká] a [PAMATUJ: delka_odpovedi | krátká]
 - Když řekne "odpovídej delčeji" → [NASTAV: delka | dlouhá] a [PAMATUJ: delka_odpovedi | dlouhá]
 - Když řekne "začni novou konverzaci / nové téma / nový projekt" → přidej [NOVA_KONVERZACE] na konec
@@ -235,14 +241,25 @@ Pojmenování a kategorizace konverzace:
 let apiKey=localStorage.getItem('jarvis_api_key')||'';
 let elevenKey=localStorage.getItem('jarvis_eleven_key')||'sk_ffd45ac3c731173e8542a46463d6a12f75c1512b982c0648';
 let elevenVoiceId=localStorage.getItem('jarvis_voice_id')||'dG9BAnuPlkbJHnXO0fo0';
+let openaiKey=localStorage.getItem('jarvis_openai_key')||'';
 let isThinking=false,isSpeaking=false,history=[],currentConvId=null,currentConvTitle='Nová konverzace',currentCategory='Obecné';
 let allConversations=[];
 let activeFilter='vse';
 let currentAudio=null;
+const OPENAI_VOICES={
+  'alloy':'Alloy — neutrální, vyvážený',
+  'echo':'Echo — jemný, mladší',
+  'fable':'Fable — britský přízvuk',
+  'onyx':'Onyx — hluboký, autoritativní',
+  'nova':'Nova — ženský, energický',
+  'shimmer':'Shimmer — ženský, jemný'
+};
+
 let jarvisSettings={
-  speed: parseFloat(localStorage.getItem('jarvis_speed')||'1.4'),
+  speed: parseFloat(localStorage.getItem('jarvis_speed')||'1.0'),
   maxTokens: parseInt(localStorage.getItem('jarvis_tokens')||'1024'),
-  responseLength: localStorage.getItem('jarvis_length')||'normální'
+  responseLength: localStorage.getItem('jarvis_length')||'normální',
+  voice: localStorage.getItem('jarvis_voice')||'onyx'
 };
 
 window.addEventListener('firebase-ready',init);
@@ -379,23 +396,31 @@ async function saveToFirebase(extractedTitle){
 }
 
 // ── ElevenLabs TTS ──
-async function speak(text){
-  if(!elevenKey||!text)return;
-  if(currentAudio){currentAudio.pause();currentAudio=null}
+async function speak(text,attempt=1){
+  if(!openaiKey||!text)return;
+  if(currentAudio){currentAudio.pause();currentAudio=null;isSpeaking=false;}
   try{
-    const res=await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elevenVoiceId}`,{
+    const speed=Math.min(Math.max(jarvisSettings.speed*0.75,0.25),4.0);
+    const res=await fetch('https://api.openai.com/v1/audio/speech',{
       method:'POST',
-      headers:{'Content-Type':'application/json','xi-api-key':elevenKey},
-      body:JSON.stringify({text,model_id:'eleven_multilingual_v2',voice_settings:{stability:0.75,similarity_boost:0.6,style:0.1,speed:jarvisSettings.speed}})
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+openaiKey},
+      body:JSON.stringify({model:'tts-1',voice:jarvisSettings.voice,input:text,speed:speed})
     });
-    if(!res.ok)return;
+    if(!res.ok){
+      if(attempt<3){await new Promise(r=>setTimeout(r,1000));return speak(text,attempt+1);}
+      console.error('TTS failed:',res.status);return;
+    }
     const blob=await res.blob();
     const url=URL.createObjectURL(blob);
     currentAudio=new Audio(url);
     isSpeaking=true;
     currentAudio.onended=()=>{isSpeaking=false;URL.revokeObjectURL(url)};
-    currentAudio.play();
-  }catch(e){console.error('TTS error:',e)}
+    currentAudio.onerror=()=>{isSpeaking=false;if(attempt<3)setTimeout(()=>speak(text,attempt+1),1000);};
+    await currentAudio.play();
+  }catch(e){
+    console.error('TTS error:',e);
+    if(attempt<3){await new Promise(r=>setTimeout(r,1000));return speak(text,attempt+1);}
+  }
 }
 
 // ── Speech to Text (Web Speech API) ──
@@ -450,6 +475,14 @@ function applySettings(param,val){
         console.log('Rychlost hlasu nastavena na:',speed);
       }
       break;
+    case 'hlas':
+    case 'voice':
+      if(OPENAI_VOICES[val]){
+        jarvisSettings.voice=val;
+        localStorage.setItem('jarvis_voice',val);
+        console.log('Hlas nastaven na:',val);
+      }
+      break;
     case 'delka':
     case 'length':
       jarvisSettings.responseLength=val;
@@ -478,6 +511,7 @@ async function loadPersonalMemory(){
       personalMemory.push({id:d.id,...data});
       if(data.klic==='rychlost_hlasu')applySettings('speed',data.hodnota);
       if(data.klic==='delka_odpovedi')applySettings('length',data.hodnota);
+      if(data.klic==='hlas')applySettings('hlas',data.hodnota);
     });
     console.log('Osobni pamet nactena:',personalMemory.length,'zaznamu');
   }catch(e){console.error('Chyba nacteni pameti:',e)}
@@ -548,7 +582,7 @@ async function sendMessage(){
   try{
     const recordsCtx=await getRecordsContext();
     const memoryCtx=getMemoryContext();
-    const settingsCtx=`\nAktuální nastavení systému: rychlost hlasu=${jarvisSettings.speed}, délka odpovědí=${jarvisSettings.responseLength}`;
+    const settingsCtx=`\nAktuální nastavení systému: rychlost hlasu=${jarvisSettings.speed}, délka odpovědí=${jarvisSettings.responseLength}, aktuální hlas=${jarvisSettings.voice}`;
     const dynamicPrompt=SYSTEM_PROMPT+(memoryCtx?'\n\n'+memoryCtx:'')+(recordsCtx?'\n\nAktualni stav databaze:\n'+recordsCtx:'')+settingsCtx;
     const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
