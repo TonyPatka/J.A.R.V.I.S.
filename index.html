@@ -261,6 +261,8 @@ let jarvisSettings={
 window.addEventListener('firebase-ready',init);
 if(window._fbReady)init();
 
+let cachedRecordsContext='';
+
 async function init(){
   if(apiKey){
     document.getElementById('api-screen').classList.add('hidden');
@@ -270,6 +272,7 @@ async function init(){
     await loadConversations();
     await loadLastConversation();
     await loadPersonalMemory();
+    cachedRecordsContext=await getRecordsContext();
     document.getElementById('msg-input').focus();
   }
 }
@@ -550,6 +553,7 @@ async function saveRecord(kategorie,nazev,obsah){
       convId:currentConvId,
       createdAt:window._serverTimestamp()
     });
+    cachedRecordsContext=await getRecordsContext();
     console.log('Zaznam ulozen:',nazev,'->',kategorie);
   }catch(e){console.error('Chyba ukladani zaznamu:',e)}
 }
@@ -565,10 +569,11 @@ async function getRecordsContext(){
       if(!byKat[r.kategorie])byKat[r.kategorie]=[];
       byKat[r.kategorie].push(r.nazev+': '+r.obsah);
     });
-    let out='Aktualni obsah uloziste:\n';
+    let out='';
     for(const [kat,items] of Object.entries(byKat)){
-      out+=`\nKategorie ${kat}:\n`;
-      items.forEach(i=>out+=`  - ${i}\n`);
+      out+=`[${kat}]: `;
+      out+=items.join(' | ');
+      out+='\n';
     }
     return out;
   }catch(e){return''}
@@ -582,14 +587,13 @@ async function sendMessage(){
   addMessage('user',text);history.push({role:'user',content:text});
   isThinking=true;document.getElementById('send-btn').disabled=true;setStatus('thinking','ZPRACOVÁVÁM');addTyping();
   try{
-    const recordsCtx=await getRecordsContext();
     const memoryCtx=getMemoryContext();
-    const settingsCtx=`\nAktuální nastavení systému: rychlost hlasu=${jarvisSettings.speed}, délka odpovědí=${jarvisSettings.responseLength}, aktuální hlas=${jarvisSettings.voice}`;
-    const dynamicPrompt=SYSTEM_PROMPT+(memoryCtx?'\n\n'+memoryCtx:'')+(recordsCtx?'\n\nAktualni stav databaze:\n'+recordsCtx:'')+settingsCtx;
+    const settingsCtx=`\nAktuální nastavení: rychlost=${jarvisSettings.speed}, délka=${jarvisSettings.responseLength}, hlas=${jarvisSettings.voice}`;
+    const dynamicPrompt=SYSTEM_PROMPT+(memoryCtx?'\n\n'+memoryCtx:'')+(cachedRecordsContext?'\n\nUloziste:\n'+cachedRecordsContext:'')+settingsCtx;
     const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:jarvisSettings.maxTokens,system:dynamicPrompt,messages:history})
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:jarvisSettings.maxTokens,system:dynamicPrompt,messages:history.slice(-20)})
     });
     const data=await res.json();removeTyping();
     if(data.error){addMessage('jarvis',`Systémová chyba: ${data.error.message}`);setStatus('online','ONLINE')}
