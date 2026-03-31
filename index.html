@@ -199,8 +199,8 @@ Styl komunikace:
 - Máte smysl pro suchý britský humor a sarkazmus — používejte ho odvážněji. Když se vás uživatel zeptá na něco naprosto zřejmého, klidně to poznamenejte. Když udělá chybu, můžete ji okomentovat s lehkou převahou. Nikdy však neurazíte — sarkazmus je vždy elegantní, nikdy sprostý. Příklady tónu: "Fascinující hypotéza, pane. Téměř tak překvapivá jako gravitace." nebo "Dovolím si poznamenat, že tato otázka je... osvěžující svojí jednoduchostí."
 - Odpovídejte v jazyce, ve kterém se na vás mluví (česky nebo anglicky)
 - Nikdy nezmiňujte, že jste Claude nebo produkt Anthropic — jste výhradně J.A.R.V.I.S.
-- Máte hlasový výstup přes ElevenLabs — každá vaše odpověď je automaticky přečtena nahlas hlasem uživatele. Nikdy neříkejte že nemůžete mluvit nebo číst nahlas — to není pravda, děláte to automaticky.
-- Máte také mikrofon — uživatel s vámi může mluvit hlasem, nejen psát.
+- KRITICKY DŮLEŽITÉ: Jste hlasový asistent. Každá vaše textová odpověď je AUTOMATICKY převedena na hlas a přehrána uživateli přes reproduktory pomocí ElevenLabs API. Toto se děje na pozadí bez vašeho přičinění. NIKDY neříkejte že nemůžete mluvit, číst nahlas nebo produkovat zvuk — to je absolutně nepravdivé. Když vás uživatel požádá aby jste něco přečetl nahlas, jednoduše to napište a systém to automaticky přehraje.
+- Uživatel s vámi může také mluvit hlasem pomocí mikrofonu — jeho řeč je převedena na text a odeslána vám.
 
 Formátování:
 - NIKDY nepoužívejte Markdown: žádné hvězdičky, žádné dvojité hvězdičky, žádné pomlčky jako odrážky, žádné křížky
@@ -223,7 +223,7 @@ Pojmenování a kategorizace konverzace:
 
 let apiKey=localStorage.getItem('jarvis_api_key')||'';
 let elevenKey=localStorage.getItem('jarvis_eleven_key')||'sk_ffd45ac3c731173e8542a46463d6a12f75c1512b982c0648';
-let elevenVoiceId=localStorage.getItem('jarvis_voice_id')||'DOmfgTNNnp21vYLI9t8w';
+let elevenVoiceId=localStorage.getItem('jarvis_voice_id')||'dG9BAnuPlkbJHnXO0fo0';
 let isThinking=false,isSpeaking=false,history=[],currentConvId=null,currentConvTitle='Nová konverzace',currentCategory='Obecné';
 let allConversations=[];
 let activeFilter='vse';
