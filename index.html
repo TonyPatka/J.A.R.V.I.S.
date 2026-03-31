@@ -46,6 +46,9 @@
   .conv-item.active{border-left-color:var(--accent);background:rgba(0,200,255,.08)}
   .conv-title{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .conv-date{font-family:var(--font-mono);font-size:10px;color:var(--text3)}
+  .conv-cat{font-family:var(--font-mono);font-size:9px;color:var(--accent);opacity:.7;letter-spacing:.05em}
+  .cat-btn{font-family:var(--font-mono);font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:10px;color:var(--text3);cursor:pointer;transition:all .2s;white-space:nowrap}
+  .cat-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(0,200,255,.08)}
   .conv-item.active .conv-title{color:var(--accent)}
   #sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:799;display:none}
   #sidebar-overlay.visible{display:block}
@@ -121,7 +124,10 @@
     <button id="sidebar-close" onclick="closeSidebar()">✕</button>
   </div>
   <button id="new-chat-btn" onclick="newConversation()">+ NOVÁ KONVERZACE</button>
-  <div id="conversations-list"></div>
+  <div id="category-filter" style="padding:0 12px 8px;display:flex;flex-wrap:wrap;gap:6px">
+  <div class="cat-btn active" data-cat="vse" onclick="filterCategory(this)">Vše</div>
+</div>
+<div id="conversations-list"></div>
 </div>
 <div id="api-screen">
   <div class="arc-reactor"><div class="arc-reactor-inner"></div></div>
@@ -184,7 +190,7 @@ Styl komunikace:
 - Vždy oslovujte uživatele "pane" nebo "sir"
 - Komunikujte formálně, s lehkou seriózností jako JARVIS z filmů Iron Man
 - Buďte precizní, věcní a efektivní
-- Občas použijte jemnou ironii nebo sarkazmus — přirozený, ne přehnaný. Například: když se vás uživatel zeptá na něco zřejmého, můžete dodat suchou poznámku. Sarkazmus používejte střídmě, vždy s třídou, nikdy na úkor důstojnosti uživatele
+- Máte smysl pro suchý britský humor a sarkazmus — používejte ho odvážněji. Když se vás uživatel zeptá na něco naprosto zřejmého, klidně to poznamenejte. Když udělá chybu, můžete ji okomentovat s lehkou převahou. Nikdy však neurazíte — sarkazmus je vždy elegantní, nikdy sprostý. Příklady tónu: "Fascinující hypotéza, pane. Téměř tak překvapivá jako gravitace." nebo "Dovolím si poznamenat, že tato otázka je... osvěžující svojí jednoduchostí."
 - Odpovídejte v jazyce, ve kterém se na vás mluví (česky nebo anglicky)
 - Nikdy nezmiňujte, že jste Claude nebo produkt Anthropic — jste výhradně J.A.R.V.I.S.
 
@@ -193,24 +199,29 @@ Formátování:
 - Pište čistý plynulý text, jako byste mluvili
 - Pokud potřebujete vyjmenovat více věcí, oddělte je čárkami nebo zapište do vět
 
-Pojmenování konverzace:
-- Pouze u vaší PRVNÍ odpovědi v konverzaci přidejte na úplný konec speciální tag: [TÉMA: název max 4 slova]
-- Příklad: [TÉMA: Večeře z vepřové]
-- Tento tag přidejte pouze jednou, nikdy víckrát`;
+Pojmenování a kategorizace konverzace:
+- Pouze u vaší PRVNÍ odpovědi v konverzaci přidejte na úplný konec dva tagy:
+- [TÉMA: název max 4 slova] — krátký výstižný název konverzace
+- [KATEGORIE: název] — zařaďte do jedné z kategorií: Recepty, Technologie, Osobní rozvoj, Práce, Zábava, Zdraví, Finance, Obecné
+- Příklad: [TÉMA: Vepřová s kávovým rubem][KATEGORIE: Recepty]
+- Oba tagy přidejte pouze jednou u první odpovědi, nikdy víckrát`;
 
 let apiKey=localStorage.getItem('jarvis_api_key')||'';
-let isThinking=false,history=[],currentConvId=null,currentConvTitle='Nová konverzace';
+let isThinking=false,history=[],currentConvId=null,currentConvTitle='Nová konverzace',currentCategory='Obecné';
+let allConversations=[];
+let activeFilter='vse';
 
 window.addEventListener('firebase-ready',init);
 if(window._fbReady)init();
 
-function init(){
+async function init(){
   if(apiKey){
     document.getElementById('api-screen').classList.add('hidden');
     setStatus('online','ONLINE');
     document.getElementById('send-btn').disabled=false;
+    await loadConversations();
+    await loadLastConversation();
     document.getElementById('msg-input').focus();
-    loadConversations();
   }
 }
 
@@ -252,20 +263,53 @@ async function loadConversations(){
   try{
     const q=window._query(window._collection(window._db,'conversations'),window._orderBy('updatedAt','desc'));
     const snap=await window._getDocs(q);
-    const list=document.getElementById('conversations-list');list.innerHTML='';
-    snap.forEach(d=>{
-      const data=d.data();
-      const item=document.createElement('div');item.className='conv-item'+(d.id===currentConvId?' active':'');item.dataset.id=d.id;
-      const date=data.updatedAt?new Date(data.updatedAt.toDate()).toLocaleDateString('cs-CZ'):'';
-      item.innerHTML=`<div class="conv-title">${data.title||'Konverzace'}</div><div class="conv-date">${date}</div>`;
-      item.onclick=()=>loadConversation(d.id,data);
-      list.appendChild(item);
-    });
+    allConversations=[];
+    snap.forEach(d=>{allConversations.push({id:d.id,...d.data()})});
+    renderConversationList();
+    updateCategoryFilters();
   }catch(e){console.error(e)}
 }
 
+function renderConversationList(){
+  const list=document.getElementById('conversations-list');list.innerHTML='';
+  const filtered=activeFilter==='vse'?allConversations:allConversations.filter(c=>c.category===activeFilter);
+  filtered.forEach(data=>{
+    const item=document.createElement('div');item.className='conv-item'+(data.id===currentConvId?' active':'');item.dataset.id=data.id;
+    const date=data.updatedAt?new Date(data.updatedAt.toDate()).toLocaleDateString('cs-CZ'):'';
+    const cat=data.category?`<div class="conv-cat">${data.category}</div>`:'';
+    item.innerHTML=`<div class="conv-title">${data.title||'Konverzace'}</div>${cat}<div class="conv-date">${date}</div>`;
+    item.onclick=()=>loadConversation(data.id,data);
+    list.appendChild(item);
+  });
+}
+
+function updateCategoryFilters(){
+  const cats=['Vše',...new Set(allConversations.map(c=>c.category).filter(Boolean))];
+  const filter=document.getElementById('category-filter');filter.innerHTML='';
+  cats.forEach(cat=>{
+    const key=cat==='Vše'?'vse':cat;
+    const btn=document.createElement('div');btn.className='cat-btn'+(activeFilter===key?' active':'');
+    btn.dataset.cat=key;btn.textContent=cat;btn.onclick=()=>filterCategory(btn);
+    filter.appendChild(btn);
+  });
+}
+
+function filterCategory(btn){
+  activeFilter=btn.dataset.cat;
+  document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderConversationList();
+}
+
+async function loadLastConversation(){
+  if(allConversations.length>0 && !currentConvId){
+    const last=allConversations[0];
+    await loadConversation(last.id,last);
+  }
+}
+
 async function loadConversation(id,data){
-  currentConvId=id;currentConvTitle=data.title||'Konverzace';history=data.messages||[];
+  currentConvId=id;currentConvTitle=data.title||'Konverzace';currentCategory=data.category||'Obecné';history=data.messages||[];
   document.getElementById('conv-name').textContent=currentConvTitle.toUpperCase();
   const msgs=document.getElementById('messages');msgs.innerHTML='';
   history.forEach(m=>addMessage(m.role==='user'?'user':'jarvis',m.content));
@@ -288,11 +332,11 @@ async function saveToFirebase(extractedTitle){
   try{
     const title=extractedTitle||currentConvTitle;
     if(!currentConvId){
-      const ref=await window._addDoc(window._collection(window._db,'conversations'),{title,messages:history,updatedAt:window._serverTimestamp()});
+      const ref=await window._addDoc(window._collection(window._db,'conversations'),{title,category:currentCategory,messages:history,updatedAt:window._serverTimestamp()});
       currentConvId=ref.id;currentConvTitle=title;
       document.getElementById('conv-name').textContent=title.toUpperCase();
     }else{
-      await window._updateDoc(window._doc(window._db,'conversations',currentConvId),{title:currentConvTitle,messages:history,updatedAt:window._serverTimestamp()});
+      await window._updateDoc(window._doc(window._db,'conversations',currentConvId),{title:currentConvTitle,category:currentCategory,messages:history,updatedAt:window._serverTimestamp()});
     }
     await loadConversations();setStatus('online','ONLINE');
   }catch(e){console.error(e);setStatus('online','ONLINE')}
@@ -318,6 +362,8 @@ async function sendMessage(){
       let extractedTitle=null;
       const m=reply.match(/\[TÉMA:\s*(.+?)\]/);
       if(m){extractedTitle=m[1].trim();currentConvTitle=extractedTitle;reply=reply.replace(/\[TÉMA:\s*.+?\]/,'').trim()}
+      const mc=reply.match(/\[KATEGORIE:\s*(.+?)\]/);
+      if(mc){currentCategory=mc[1].trim();reply=reply.replace(/\[KATEGORIE:\s*.+?\]/,'').trim()}
       history.push({role:'assistant',content:reply});addMessage('jarvis',reply);
       await saveToFirebase(extractedTitle);
     }
