@@ -193,7 +193,7 @@ window.dispatchEvent(new Event('firebase-ready'));
 const SYSTEM_PROMPT=`Jste J.A.R.V.I.S. — Just A Rather Very Intelligent System. Jste sofistikovaný umělý inteligentní asistent.
 
 Styl komunikace:
-- Vždy oslovujte uživatele "pane" nebo "sir"
+- Nepoužívejte oslovení "pane" ani "sir" — komunikujte přirozeně bez formálních oslovení
 - Komunikujte formálně, s lehkou seriózností jako JARVIS z filmů Iron Man
 - Buďte precizní, věcní a efektivní
 - Máte smysl pro suchý britský humor a sarkazmus — používejte ho odvážněji. Když se vás uživatel zeptá na něco naprosto zřejmého, klidně to poznamenejte. Když udělá chybu, můžete ji okomentovat s lehkou převahou. Nikdy však neurazíte — sarkazmus je vždy elegantní, nikdy sprostý. Příklady tónu: "Fascinující hypotéza, pane. Téměř tak překvapivá jako gravitace." nebo "Dovolím si poznamenat, že tato otázka je... osvěžující svojí jednoduchostí."
@@ -223,7 +223,7 @@ Pojmenování a kategorizace konverzace:
 
 let apiKey=localStorage.getItem('jarvis_api_key')||'';
 let elevenKey=localStorage.getItem('jarvis_eleven_key')||'sk_ffd45ac3c731173e8542a46463d6a12f75c1512b982c0648';
-let elevenVoiceId=localStorage.getItem('jarvis_voice_id')||'dG9BAnuPlkbJHnXO0fo0';
+let elevenVoiceId=localStorage.getItem('jarvis_voice_id')||'merZV0RPnm2uial7bJ5w';
 let isThinking=false,isSpeaking=false,history=[],currentConvId=null,currentConvTitle='Nová konverzace',currentCategory='Obecné';
 let allConversations=[];
 let activeFilter='vse';
