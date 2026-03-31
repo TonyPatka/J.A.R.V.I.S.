@@ -216,6 +216,15 @@ Paměť a ukládání:
 - Osobní paměť používej aktivně — oslovuj uživatele jménem pokud ho znáš, přizpůsobuj odpovědi jeho preferencím.
 - NIKDY neříkej že nemůžeš ukládat — vše funguje.
 
+Dynamická osobnost a nastavení:
+- Když uživatel řekne "mluv rychleji" → přidej [NASTAV: rychlost | 1.8] a ulož [PAMATUJ: rychlost_hlasu | 1.8]
+- Když řekne "mluv pomaleji" → [NASTAV: rychlost | 1.0] a [PAMATUJ: rychlost_hlasu | 1.0]
+- Když řekne "odpovídej kratčeji" → [NASTAV: delka | krátká] a [PAMATUJ: delka_odpovedi | krátká]
+- Když řekne "odpovídej delčeji" → [NASTAV: delka | dlouhá] a [PAMATUJ: delka_odpovedi | dlouhá]
+- Když řekne "začni novou konverzaci / nové téma / nový projekt" → přidej [NOVA_KONVERZACE] na konec
+- Všechny preference stylu komunikace ukládej jako [PAMATUJ: preference_X | hodnota]
+- Tagy [NASTAV:], [PAMATUJ:], [NOVA_KONVERZACE] jsou neviditelné — uživatel je neuvidí, systém je zachytí automaticky
+
 Pojmenování a kategorizace konverzace:
 - Pouze u vaší PRVNÍ odpovědi v konverzaci přidejte na úplný konec dva tagy:
 - [TÉMA: název max 4 slova] — krátký výstižný název konverzace
@@ -230,6 +239,11 @@ let isThinking=false,isSpeaking=false,history=[],currentConvId=null,currentConvT
 let allConversations=[];
 let activeFilter='vse';
 let currentAudio=null;
+let jarvisSettings={
+  speed: parseFloat(localStorage.getItem('jarvis_speed')||'1.4'),
+  maxTokens: parseInt(localStorage.getItem('jarvis_tokens')||'1024'),
+  responseLength: localStorage.getItem('jarvis_length')||'normální'
+};
 
 window.addEventListener('firebase-ready',init);
 if(window._fbReady)init();
@@ -372,7 +386,7 @@ async function speak(text){
     const res=await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elevenVoiceId}`,{
       method:'POST',
       headers:{'Content-Type':'application/json','xi-api-key':elevenKey},
-      body:JSON.stringify({text,model_id:'eleven_multilingual_v2',voice_settings:{stability:0.75,similarity_boost:0.6,style:0.1,speed:1.4}})
+      body:JSON.stringify({text,model_id:'eleven_multilingual_v2',voice_settings:{stability:0.75,similarity_boost:0.6,style:0.1,speed:jarvisSettings.speed}})
     });
     if(!res.ok)return;
     const blob=await res.blob();
@@ -425,12 +439,46 @@ function stopMic(){
 
 let personalMemory=[];
 
+function applySettings(param,val){
+  switch(param.toLowerCase()){
+    case 'rychlost':
+    case 'speed':
+      const speed=parseFloat(val);
+      if(!isNaN(speed)&&speed>0&&speed<=3){
+        jarvisSettings.speed=speed;
+        localStorage.setItem('jarvis_speed',speed);
+        console.log('Rychlost hlasu nastavena na:',speed);
+      }
+      break;
+    case 'delka':
+    case 'length':
+      jarvisSettings.responseLength=val;
+      localStorage.setItem('jarvis_length',val);
+      if(val==='kratká'||val==='krátká'||val==='short'){
+        jarvisSettings.maxTokens=300;
+        localStorage.setItem('jarvis_tokens','300');
+      }else if(val==='střední'||val==='medium'){
+        jarvisSettings.maxTokens=600;
+        localStorage.setItem('jarvis_tokens','600');
+      }else if(val==='dlouhá'||val==='long'){
+        jarvisSettings.maxTokens=1500;
+        localStorage.setItem('jarvis_tokens','1500');
+      }
+      break;
+  }
+}
+
 async function loadPersonalMemory(){
   if(!window._db)return;
   try{
     const snap=await window._getDocs(window._collection(window._db,'pamet'));
     personalMemory=[];
-    snap.forEach(d=>personalMemory.push({id:d.id,...d.data()}));
+    snap.forEach(d=>{
+      const data=d.data();
+      personalMemory.push({id:d.id,...data});
+      if(data.klic==='rychlost_hlasu')applySettings('speed',data.hodnota);
+      if(data.klic==='delka_odpovedi')applySettings('length',data.hodnota);
+    });
     console.log('Osobni pamet nactena:',personalMemory.length,'zaznamu');
   }catch(e){console.error('Chyba nacteni pameti:',e)}
 }
@@ -500,11 +548,12 @@ async function sendMessage(){
   try{
     const recordsCtx=await getRecordsContext();
     const memoryCtx=getMemoryContext();
-    const dynamicPrompt=SYSTEM_PROMPT+(memoryCtx?'\n\n'+memoryCtx:'')+(recordsCtx?'\n\nAktualni stav databaze:\n'+recordsCtx:'');
+    const settingsCtx=`\nAktuální nastavení systému: rychlost hlasu=${jarvisSettings.speed}, délka odpovědí=${jarvisSettings.responseLength}`;
+    const dynamicPrompt=SYSTEM_PROMPT+(memoryCtx?'\n\n'+memoryCtx:'')+(recordsCtx?'\n\nAktualni stav databaze:\n'+recordsCtx:'')+settingsCtx;
     const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:dynamicPrompt,messages:history})
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:jarvisSettings.maxTokens,system:dynamicPrompt,messages:history})
     });
     const data=await res.json();removeTyping();
     if(data.error){addMessage('jarvis',`Systémová chyba: ${data.error.message}`);setStatus('online','ONLINE')}
@@ -526,6 +575,16 @@ async function sendMessage(){
         const klic=mp[1].trim(),hodnota=mp[2].trim();
         reply=reply.replace(/\[PAMATUJ:\s*.+?\]/,'').trim();
         saveMemory(klic,hodnota);
+      }
+      const mn=reply.match(/\[NASTAV:\s*(.+?)\|(.+?)\]/);
+      if(mn){
+        const param=mn[1].trim(),val=mn[2].trim();
+        reply=reply.replace(/\[NASTAV:\s*.+?\]/,'').trim();
+        applySettings(param,val);
+      }
+      if(reply.includes('[NOVA_KONVERZACE]')){
+        reply=reply.replace('[NOVA_KONVERZACE]','').trim();
+        setTimeout(()=>newConversation(),800);
       }
       history.push({role:'assistant',content:reply});addMessage('jarvis',reply);speak(reply);
       await saveToFirebase(extractedTitle);
