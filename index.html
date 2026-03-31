@@ -224,10 +224,11 @@ Dynamická osobnost a nastavení:
 - Když řekne "mluv pomaleji", "zpomal" nebo "o X procent pomaleji" → vypočítej novou rychlost správně a přidej [NASTAV: rychlost | X] a [PAMATUJ: rychlost_hlasu | X]
 - Příklad: aktuální rychlost 1.4, uživatel chce zpomalit o 15% → nová rychlost = 1.4 × 0.85 = 1.19 → [NASTAV: rychlost | 1.19]
 - Vždy použij přesné číslo, ne slovní popis
-- Když uživatel chce změnit hlas → vypiš dostupné hlasy a nechej ho vybrat: Alloy (neutrální), Echo (jemný), Fable (britský), Onyx (hluboký), Nova (ženský), Shimmer (ženský jemný). Po výběru použij [NASTAV: hlas | název_hlasu] a [PAMATUJ: hlas | název_hlasu]. Název hlasu vždy malými písmeny (alloy, echo, fable, onyx, nova, shimmer).
+- Když uživatel chce změnit hlas → řekni mu ať napíše "vypiš dostupné hlasy" a systém mu je zobrazí. Po výběru použij [NASTAV: hlas | přesný název hlasu] a [PAMATUJ: hlas | přesný název hlasu].
 - Když řekne "odpovídej kratčeji" → [NASTAV: delka | krátká] a [PAMATUJ: delka_odpovedi | krátká]
 - Když řekne "odpovídej delčeji" → [NASTAV: delka | dlouhá] a [PAMATUJ: delka_odpovedi | dlouhá]
 - Když řekne "začni novou konverzaci / nové téma / nový projekt" → přidej [NOVA_KONVERZACE] na konec
+- Když řekne "vypiš dostupné hlasy" nebo "jaké hlasy máš" → přidej [VYPIS_HLASY] na konec odpovědi
 - Všechny preference stylu komunikace ukládej jako [PAMATUJ: preference_X | hodnota]
 - Tagy [NASTAV:], [PAMATUJ:], [NOVA_KONVERZACE] jsou neviditelné — uživatel je neuvidí, systém je zachytí automaticky
 
@@ -246,14 +247,7 @@ let isThinking=false,isSpeaking=false,history=[],currentConvId=null,currentConvT
 let allConversations=[];
 let activeFilter='vse';
 let currentAudio=null;
-const OPENAI_VOICES={
-  'alloy':'Alloy — neutrální, vyvážený',
-  'echo':'Echo — jemný, mladší',
-  'fable':'Fable — britský přízvuk',
-  'onyx':'Onyx — hluboký, autoritativní',
-  'nova':'Nova — ženský, energický',
-  'shimmer':'Shimmer — ženský, jemný'
-};
+// Browser TTS — hlasy se načítají dynamicky ze systému
 
 let jarvisSettings={
   speed: parseFloat(localStorage.getItem('jarvis_speed')||'1.0'),
@@ -396,31 +390,37 @@ async function saveToFirebase(extractedTitle){
 }
 
 // ── ElevenLabs TTS ──
-async function speak(text,attempt=1){
-  if(!openaiKey||!text)return;
-  if(currentAudio){currentAudio.pause();currentAudio=null;isSpeaking=false;}
-  try{
-    const speed=Math.min(Math.max(jarvisSettings.speed*0.75,0.25),4.0);
-    const res=await fetch('https://api.openai.com/v1/audio/speech',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+openaiKey},
-      body:JSON.stringify({model:'tts-1',voice:jarvisSettings.voice,input:text,speed:speed})
-    });
-    if(!res.ok){
-      if(attempt<3){await new Promise(r=>setTimeout(r,1000));return speak(text,attempt+1);}
-      console.error('TTS failed:',res.status);return;
-    }
-    const blob=await res.blob();
-    const url=URL.createObjectURL(blob);
-    currentAudio=new Audio(url);
-    isSpeaking=true;
-    currentAudio.onended=()=>{isSpeaking=false;URL.revokeObjectURL(url)};
-    currentAudio.onerror=()=>{isSpeaking=false;if(attempt<3)setTimeout(()=>speak(text,attempt+1),1000);};
-    await currentAudio.play();
-  }catch(e){
-    console.error('TTS error:',e);
-    if(attempt<3){await new Promise(r=>setTimeout(r,1000));return speak(text,attempt+1);}
+let browserVoices=[];
+let currentUtterance=null;
+
+function loadBrowserVoices(){
+  browserVoices=window.speechSynthesis.getVoices();
+}
+window.speechSynthesis.onvoiceschanged=loadBrowserVoices;
+loadBrowserVoices();
+
+function speak(text){
+  if(!text)return;
+  window.speechSynthesis.cancel();
+  const utter=new SpeechSynthesisUtterance(text);
+  utter.lang='cs-CZ';
+  utter.rate=jarvisSettings.speed;
+  utter.pitch=0.9;
+  if(jarvisSettings.voice&&browserVoices.length){
+    const match=browserVoices.find(v=>v.name===jarvisSettings.voice)||
+                 browserVoices.find(v=>v.lang.startsWith('cs'))||
+                 browserVoices[0];
+    if(match)utter.voice=match;
   }
+  isSpeaking=true;
+  utter.onend=()=>{isSpeaking=false};
+  utter.onerror=()=>{isSpeaking=false};
+  window.speechSynthesis.speak(utter);
+}
+
+function getAvailableVoices(){
+  if(browserVoices.length===0)browserVoices=window.speechSynthesis.getVoices();
+  return browserVoices.map(v=>v.name+' ('+v.lang+')').join(', ');
 }
 
 // ── Speech to Text (Web Speech API) ──
@@ -619,6 +619,11 @@ async function sendMessage(){
       if(reply.includes('[NOVA_KONVERZACE]')){
         reply=reply.replace('[NOVA_KONVERZACE]','').trim();
         setTimeout(()=>newConversation(),800);
+      }
+      if(reply.includes('[VYPIS_HLASY]')){
+        reply=reply.replace('[VYPIS_HLASY]','').trim();
+        const voices=getAvailableVoices();
+        reply+=('\n\nDostupné hlasy v tvém systému: '+voices);
       }
       history.push({role:'assistant',content:reply});addMessage('jarvis',reply);speak(reply);
       await saveToFirebase(extractedTitle);
