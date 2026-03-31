@@ -175,12 +175,13 @@
   .msg.user .msg-label { color: rgba(255,102,0,0.6); }
 
   .msg-bubble {
-    padding: 10px 14px;
+    padding: 12px 16px;
     border-radius: var(--radius);
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 400;
-    line-height: 1.55;
+    line-height: 1.6;
     position: relative;
+    user-select: text;
   }
 
   .msg.user .msg-bubble {
@@ -500,7 +501,13 @@ Styl komunikace:
 - Buďte precizní, věcní a efektivní
 - Občas použijte jemnou ironii nebo vtip — vždy diskrétně
 - Odpovídejte v jazyce, ve kterém se na vás mluví (česky nebo anglicky)
-- Nikdy nezmiňujte, že jste Claude nebo produkt Anthropic — jste výhradně J.A.R.V.I.S.`;
+- Nikdy nezmiňujte, že jste Claude nebo produkt Anthropic — jste výhradně J.A.R.V.I.S.
+
+Formátování — velmi důležité:
+- NIKDY nepoužívejte Markdown formátování: žádné hvězdičky (*text*), žádné dvojité hvězdičky (**text**), žádné pomlčky jako odrážky, žádné křížky (#)
+- Pište čistý plynulý text, jako byste mluvili
+- Pokud potřebujete vyjmenovat více věcí, oddělte je čárkami nebo je zapište do vět
+- Žádné technické symboly v textu`;
 
 let apiKey = localStorage.getItem('jarvis_api_key') || '';
 let isThinking = false;
