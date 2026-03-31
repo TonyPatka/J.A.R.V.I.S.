@@ -220,10 +220,12 @@ Paměť a ukládání:
 
 Dynamická osobnost a nastavení:
 - Aktuální rychlost hlasu je vždy uvedena v sekci "Aktuální nastavení systému" níže
-- Když uživatel řekne "mluv rychleji" nebo "zrychli" → vypočítej novou rychlost = aktuální + 0.2, přidej [NASTAV: rychlost | X] a [PAMATUJ: rychlost_hlasu | X]
-- Když řekne "mluv pomaleji", "zpomal" nebo "o X procent pomaleji" → vypočítej novou rychlost správně a přidej [NASTAV: rychlost | X] a [PAMATUJ: rychlost_hlasu | X]
-- Příklad: aktuální rychlost 1.4, uživatel chce zpomalit o 15% → nová rychlost = 1.4 × 0.85 = 1.19 → [NASTAV: rychlost | 1.19]
-- Vždy použij přesné číslo, ne slovní popis
+- Rozsah rychlosti: 0.5 (velmi pomalu) až 2.0 (velmi rychle), výchozí je 1.0
+- Když uživatel řekne "mluv rychleji" nebo "zrychli" → nová rychlost = aktuální + 0.2, přidej [NASTAV: rychlost | X] a [PAMATUJ: rychlost_hlasu | X]
+- Když řekne "zpomal" nebo "o X procent pomaleji" → vypočítej správně a přidej [NASTAV: rychlost | X] a [PAMATUJ: rychlost_hlasu | X]
+- Příklad: aktuální 1.0, zrychlit o 20% → 1.0 × 1.2 = 1.2 → [NASTAV: rychlost | 1.2]
+- Příklad: aktuální 1.2, zpomalit o 15% → 1.2 × 0.85 = 1.02 → [NASTAV: rychlost | 1.02]
+- Vždy použij přesné číslo zaokrouhlené na 2 desetinná místa
 - Když uživatel chce změnit hlas → řekni mu ať napíše "vypiš dostupné hlasy" a systém mu je zobrazí. Po výběru použij [NASTAV: hlas | přesný název hlasu] a [PAMATUJ: hlas | přesný název hlasu].
 - Když řekne "odpovídej kratčeji" → [NASTAV: delka | krátká] a [PAMATUJ: delka_odpovedi | krátká]
 - Když řekne "odpovídej delčeji" → [NASTAV: delka | dlouhá] a [PAMATUJ: delka_odpovedi | dlouhá]
